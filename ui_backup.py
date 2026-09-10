@@ -3,6 +3,8 @@ from tkinter import messagebox
 from typing import Any
 import threading
 
+import requests
+
 from weather_api import WeatherAPI, WeatherAPIError
 
 
@@ -33,15 +35,7 @@ class WeatherAppUI:
         self.daily_forecast: list[dict[str, Any]] = []
 
         # API client
-        try:
-            self.weather_api = WeatherAPI()
-        except WeatherAPIError as error:
-            messagebox.showerror(
-                "Weather App",
-                str(error)
-            )
-            self.root.destroy()
-            return
+        self.weather_api = WeatherAPI()
 
         # Prevent multiple requests at the same time.
         self.is_loading = False
@@ -74,8 +68,8 @@ class WeatherAppUI:
         self.main_frame.pack(
             fill="both",
             expand=True,
-            padx=24,
-            pady=10
+            padx=22,
+            pady=12
         )
 
         # -------------------------------------------------
@@ -91,7 +85,7 @@ class WeatherAppUI:
         )
 
         title_label.pack(
-            pady=(0, 9)
+            pady=(0, 12)
         )
 
         # -------------------------------------------------
@@ -105,7 +99,7 @@ class WeatherAppUI:
 
         search_frame.pack(
             fill="x",
-            pady=(0, 6)
+            pady=(0, 8)
         )
 
         self.search_entry = tk.Entry(
@@ -119,7 +113,7 @@ class WeatherAppUI:
             side="left",
             fill="x",
             expand=True,
-            ipady=6,
+            ipady=7,
             padx=(0, 8)
         )
 
@@ -143,13 +137,34 @@ class WeatherAppUI:
             activeforeground="white",
             relief="flat",
             padx=20,
-            pady=6,
+            pady=7,
             cursor="hand2",
             command=self._search_weather
         )
 
         self.search_button.pack(
             side="left"
+        )
+
+        # -------------------------------------------------
+        # LOCATION BUTTON
+        # -------------------------------------------------
+
+        self.location_button = tk.Button(
+            self.main_frame,
+            text="📍 Use My Location",
+            font=("Segoe UI", 9),
+            bg="#e5e7eb",
+            fg="#1f2937",
+            relief="flat",
+            padx=14,
+            pady=5,
+            cursor="hand2",
+            command=self._use_location
+        )
+
+        self.location_button.pack(
+            pady=(0, 5)
         )
 
         # -------------------------------------------------
@@ -165,7 +180,7 @@ class WeatherAppUI:
         )
 
         self.status_label.pack(
-            pady=(0, 5)
+            pady=(0, 7)
         )
 
         # -------------------------------------------------
@@ -179,10 +194,9 @@ class WeatherAppUI:
 
         self.current_frame.pack(
             fill="x",
-            pady=(0, 5)
+            pady=(0, 6)
         )
 
-        # Location
         self.location_label = tk.Label(
             self.current_frame,
             text="Loading...",
@@ -192,58 +206,48 @@ class WeatherAppUI:
         )
 
         self.location_label.pack(
-            pady=(7, 0)
+            pady=(7, 1)
         )
 
-        # Weather icon
         self.icon_label = tk.Label(
             self.current_frame,
             text="🌤",
-            font=("Segoe UI Emoji", 30),
+            font=("Segoe UI Emoji", 34),
             bg="white"
         )
 
-        self.icon_label.pack(
-            pady=(0, 0)
-        )
+        self.icon_label.pack()
 
-        # Temperature
         self.temperature_label = tk.Label(
             self.current_frame,
             text="--",
-            font=("Segoe UI", 32, "bold"),
+            font=("Segoe UI", 34, "bold"),
             bg="white",
             fg="#111827"
         )
 
-        self.temperature_label.pack(
-            pady=(0, 0)
-        )
+        self.temperature_label.pack()
 
-        # Description
         self.description_label = tk.Label(
             self.current_frame,
             text="Loading weather...",
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 12),
             bg="white",
             fg="#4b5563"
         )
 
-        self.description_label.pack(
-            pady=(0, 1)
-        )
+        self.description_label.pack()
 
-        # Feels like
         self.feels_like_label = tk.Label(
             self.current_frame,
             text="Feels like --",
-            font=("Segoe UI", 9),
+            font=("Segoe UI", 10),
             bg="white",
             fg="#6b7280"
         )
 
         self.feels_like_label.pack(
-            pady=(0, 7)
+            pady=(1, 6)
         )
 
         # -------------------------------------------------
@@ -257,7 +261,7 @@ class WeatherAppUI:
 
         details_frame.pack(
             fill="x",
-            padx=30,
+            padx=25,
             pady=(0, 7)
         )
 
@@ -299,7 +303,7 @@ class WeatherAppUI:
         )
 
         unit_frame.pack(
-            pady=(2, 1)
+            pady=(4, 3)
         )
 
         unit_label = tk.Label(
@@ -312,7 +316,7 @@ class WeatherAppUI:
 
         unit_label.pack(
             side="left",
-            padx=(0, 5)
+            padx=(0, 6)
         )
 
         self.celsius_button = tk.Button(
@@ -324,8 +328,8 @@ class WeatherAppUI:
             activebackground="#1d4ed8",
             activeforeground="white",
             relief="flat",
-            padx=15,
-            pady=4,
+            padx=17,
+            pady=5,
             cursor="hand2",
             command=self._show_celsius
         )
@@ -344,8 +348,8 @@ class WeatherAppUI:
             activebackground="#d1d5db",
             activeforeground="#111827",
             relief="flat",
-            padx=15,
-            pady=4,
+            padx=17,
+            pady=5,
             cursor="hand2",
             command=self._show_fahrenheit
         )
@@ -364,14 +368,14 @@ class WeatherAppUI:
         )
 
         self.unit_status_label.pack(
-            pady=(0, 4)
+            pady=(0, 5)
         )
 
         # -------------------------------------------------
-        # UPCOMING FORECAST
+        # HOURLY FORECAST
         # -------------------------------------------------
 
-        upcoming_title = tk.Label(
+        hourly_title = tk.Label(
             self.main_frame,
             text="Upcoming Forecast",
             font=("Segoe UI", 13, "bold"),
@@ -379,9 +383,9 @@ class WeatherAppUI:
             fg="#1f2937"
         )
 
-        upcoming_title.pack(
+        hourly_title.pack(
             anchor="w",
-            pady=(2, 4)
+            pady=(2, 5)
         )
 
         self.hourly_frame = tk.Frame(
@@ -391,7 +395,7 @@ class WeatherAppUI:
 
         self.hourly_frame.pack(
             fill="x",
-            pady=(0, 5)
+            pady=(0, 7)
         )
 
         # -------------------------------------------------
@@ -408,7 +412,7 @@ class WeatherAppUI:
 
         daily_title.pack(
             anchor="w",
-            pady=(2, 4)
+            pady=(2, 5)
         )
 
         self.daily_frame = tk.Frame(
@@ -447,7 +451,7 @@ class WeatherAppUI:
         tk.Label(
             frame,
             text=icon,
-            font=("Segoe UI Emoji", 15),
+            font=("Segoe UI Emoji", 16),
             bg="white"
         ).pack()
 
@@ -498,6 +502,10 @@ class WeatherAppUI:
         self.search_button.config(
             state="disabled",
             text="Searching..."
+        )
+
+        self.location_button.config(
+            state="disabled"
         )
 
         self.status_label.config(
@@ -567,6 +575,10 @@ class WeatherAppUI:
             text="Search"
         )
 
+        self.location_button.config(
+            state="normal"
+        )
+
         location = weather_data["location"]
         current = weather_data["current"]
         forecast = weather_data["forecast"]
@@ -614,6 +626,10 @@ class WeatherAppUI:
         self.search_button.config(
             state="normal",
             text="Search"
+        )
+
+        self.location_button.config(
+            state="normal"
         )
 
         self.status_label.config(
@@ -749,6 +765,195 @@ class WeatherAppUI:
                     "icon": icon
                 }
             )
+
+    # =====================================================
+    # GET MY LOCATION
+    # =====================================================
+
+    def _use_location(self) -> None:
+        """Detect approximate location using public IP."""
+
+        if self.is_loading:
+            return
+
+        self.is_loading = True
+
+        self.search_button.config(
+            state="disabled"
+        )
+
+        self.location_button.config(
+            state="disabled",
+            text="Detecting..."
+        )
+
+        self.status_label.config(
+            text="Detecting your location..."
+        )
+
+        thread = threading.Thread(
+            target=self._detect_location,
+            daemon=True
+        )
+
+        thread.start()
+
+    # =====================================================
+    # DETECT LOCATION
+    # =====================================================
+
+    def _detect_location(self) -> None:
+        """Get approximate location from public IP."""
+
+        try:
+
+            response = requests.get(
+                "https://ipapi.co/json/",
+                timeout=10
+            )
+
+            if response.status_code != 200:
+                raise WeatherAPIError(
+                    "Unable to detect your location."
+                )
+
+            data = response.json()
+
+            city = data.get(
+                "city"
+            )
+
+            if not city:
+                raise WeatherAPIError(
+                    "Your city could not be determined "
+                    "from your IP address."
+                )
+
+            self.root.after(
+                0,
+                self._location_detected,
+                city
+            )
+
+        except requests.exceptions.Timeout:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                "Location detection timed out."
+            )
+
+        except requests.exceptions.ConnectionError:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                "Could not connect to the "
+                "location service."
+            )
+
+        except requests.exceptions.RequestException as error:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                f"Location service error: {error}"
+            )
+
+        except ValueError:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                "Location service returned invalid data."
+            )
+
+        except WeatherAPIError as error:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                str(error)
+            )
+
+        except Exception as error:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                f"Unexpected error: {error}"
+            )
+
+    # =====================================================
+    # LOCATION DETECTED
+    # =====================================================
+
+    def _location_detected(
+        self,
+        city: str
+    ) -> None:
+        """Start weather search after location detection."""
+
+        # Reset loading state because _search_weather()
+        # needs to start a new request.
+        self.is_loading = False
+
+        self.search_button.config(
+            state="normal"
+        )
+
+        self.location_button.config(
+            state="normal",
+            text="📍 Use My Location"
+        )
+
+        self.search_entry.delete(
+            0,
+            tk.END
+        )
+
+        self.search_entry.insert(
+            0,
+            city
+        )
+
+        self.status_label.config(
+            text=f"Location detected: {city}"
+        )
+
+        # Now fetch actual weather.
+        self._search_weather(
+            city
+        )
+
+    # =====================================================
+    # LOCATION FAILED
+    # =====================================================
+
+    def _location_failed(
+        self,
+        error_message: str
+    ) -> None:
+        """Handle location detection errors."""
+
+        self.is_loading = False
+
+        self.search_button.config(
+            state="normal"
+        )
+
+        self.location_button.config(
+            state="normal",
+            text="📍 Use My Location"
+        )
+
+        self.status_label.config(
+            text="Location detection failed."
+        )
+
+        self._show_error(
+            error_message
+        )
 
     # =====================================================
     # FORMAT FORECAST TIME
@@ -1018,7 +1223,7 @@ class WeatherAppUI:
                 self.hourly_frame,
                 bg="white",
                 padx=7,
-                pady=5
+                pady=6
             )
 
             card.pack(
@@ -1039,7 +1244,7 @@ class WeatherAppUI:
             tk.Label(
                 card,
                 text=entry["icon"],
-                font=("Segoe UI Emoji", 16),
+                font=("Segoe UI Emoji", 17),
                 bg="white"
             ).pack(
                 pady=1
@@ -1071,7 +1276,7 @@ class WeatherAppUI:
                 self.daily_frame,
                 bg="white",
                 padx=7,
-                pady=5
+                pady=6
             )
 
             card.pack(
@@ -1092,7 +1297,7 @@ class WeatherAppUI:
             tk.Label(
                 card,
                 text=entry["icon"],
-                font=("Segoe UI Emoji", 16),
+                font=("Segoe UI Emoji", 17),
                 bg="white"
             ).pack(
                 pady=1

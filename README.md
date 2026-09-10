@@ -37,14 +37,14 @@ A desktop weather application built with Python and Tkinter using the OpenWeathe
 
 ```text
 WeatherApp/
-│
-├── app.py
-├── ui.py
-├── weather_api.py
-├── weather_data.py
-├── test_api.py
-├── test_weather_api.py
-├── requirements.txt
-├── .env.example
-├── .gitignore
-└── README.md
+|
+|-- app.py
+|-- ui.py
+|-- weather_api.py
+|-- weather_data.py
+|-- test_api.py
+|-- test_weather_api.py
+|-- requirements.txt
+|-- .env.example
+|-- .gitignore
+|-- README.md
