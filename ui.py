@@ -1,0 +1,1338 @@
+import tkinter as tk
+from tkinter import messagebox
+from typing import Any
+import threading
+
+import requests
+
+from weather_api import WeatherAPI, WeatherAPIError
+
+
+class WeatherAppUI:
+    """Graphical user interface for the Weather App."""
+
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+
+        # -------------------------------------------------
+        # WINDOW
+        # -------------------------------------------------
+
+        self.root.title("Weather App")
+        self.root.geometry("1100x760")
+        self.root.minsize(950, 680)
+        self.root.configure(bg="#f4f7fb")
+
+        # -------------------------------------------------
+        # APPLICATION STATE
+        # -------------------------------------------------
+
+        # All temperatures are stored internally in Celsius.
+        self.current_unit = "C"
+
+        self.current_weather: dict[str, Any] = {}
+        self.hourly_forecast: list[dict[str, Any]] = []
+        self.daily_forecast: list[dict[str, Any]] = []
+
+        # API client
+        self.weather_api = WeatherAPI()
+
+        # Prevent multiple requests at the same time.
+        self.is_loading = False
+
+        # -------------------------------------------------
+        # BUILD UI
+        # -------------------------------------------------
+
+        self._create_widgets()
+
+        # Automatically load Jaipur when application starts.
+        self._search_weather("Jaipur")
+
+    # =====================================================
+    # CREATE UI
+    # =====================================================
+
+    def _create_widgets(self) -> None:
+        """Create the complete application interface."""
+
+        # -------------------------------------------------
+        # MAIN CONTAINER
+        # -------------------------------------------------
+
+        self.main_frame = tk.Frame(
+            self.root,
+            bg="#f4f7fb"
+        )
+
+        self.main_frame.pack(
+            fill="both",
+            expand=True,
+            padx=22,
+            pady=12
+        )
+
+        # -------------------------------------------------
+        # TITLE
+        # -------------------------------------------------
+
+        title_label = tk.Label(
+            self.main_frame,
+            text="🌤 Weather App",
+            font=("Segoe UI", 24, "bold"),
+            bg="#f4f7fb",
+            fg="#1f2937"
+        )
+
+        title_label.pack(
+            pady=(0, 12)
+        )
+
+        # -------------------------------------------------
+        # SEARCH AREA
+        # -------------------------------------------------
+
+        search_frame = tk.Frame(
+            self.main_frame,
+            bg="#f4f7fb"
+        )
+
+        search_frame.pack(
+            fill="x",
+            pady=(0, 8)
+        )
+
+        self.search_entry = tk.Entry(
+            search_frame,
+            font=("Segoe UI", 12),
+            relief="solid",
+            bd=1
+        )
+
+        self.search_entry.pack(
+            side="left",
+            fill="x",
+            expand=True,
+            ipady=7,
+            padx=(0, 8)
+        )
+
+        self.search_entry.insert(
+            0,
+            "Jaipur"
+        )
+
+        self.search_entry.bind(
+            "<Return>",
+            lambda event: self._search_weather()
+        )
+
+        self.search_button = tk.Button(
+            search_frame,
+            text="Search",
+            font=("Segoe UI", 10, "bold"),
+            bg="#2563eb",
+            fg="white",
+            activebackground="#1d4ed8",
+            activeforeground="white",
+            relief="flat",
+            padx=20,
+            pady=7,
+            cursor="hand2",
+            command=self._search_weather
+        )
+
+        self.search_button.pack(
+            side="left"
+        )
+
+        # -------------------------------------------------
+        # LOCATION BUTTON
+        # -------------------------------------------------
+
+        self.location_button = tk.Button(
+            self.main_frame,
+            text="📍 Use My Location",
+            font=("Segoe UI", 9),
+            bg="#e5e7eb",
+            fg="#1f2937",
+            relief="flat",
+            padx=14,
+            pady=5,
+            cursor="hand2",
+            command=self._use_location
+        )
+
+        self.location_button.pack(
+            pady=(0, 5)
+        )
+
+        # -------------------------------------------------
+        # STATUS
+        # -------------------------------------------------
+
+        self.status_label = tk.Label(
+            self.main_frame,
+            text="Ready",
+            font=("Segoe UI", 9),
+            bg="#f4f7fb",
+            fg="#6b7280"
+        )
+
+        self.status_label.pack(
+            pady=(0, 7)
+        )
+
+        # -------------------------------------------------
+        # CURRENT WEATHER CARD
+        # -------------------------------------------------
+
+        self.current_frame = tk.Frame(
+            self.main_frame,
+            bg="white"
+        )
+
+        self.current_frame.pack(
+            fill="x",
+            pady=(0, 6)
+        )
+
+        self.location_label = tk.Label(
+            self.current_frame,
+            text="Loading...",
+            font=("Segoe UI", 16, "bold"),
+            bg="white",
+            fg="#111827"
+        )
+
+        self.location_label.pack(
+            pady=(7, 1)
+        )
+
+        self.icon_label = tk.Label(
+            self.current_frame,
+            text="🌤",
+            font=("Segoe UI Emoji", 34),
+            bg="white"
+        )
+
+        self.icon_label.pack()
+
+        self.temperature_label = tk.Label(
+            self.current_frame,
+            text="--",
+            font=("Segoe UI", 34, "bold"),
+            bg="white",
+            fg="#111827"
+        )
+
+        self.temperature_label.pack()
+
+        self.description_label = tk.Label(
+            self.current_frame,
+            text="Loading weather...",
+            font=("Segoe UI", 12),
+            bg="white",
+            fg="#4b5563"
+        )
+
+        self.description_label.pack()
+
+        self.feels_like_label = tk.Label(
+            self.current_frame,
+            text="Feels like --",
+            font=("Segoe UI", 10),
+            bg="white",
+            fg="#6b7280"
+        )
+
+        self.feels_like_label.pack(
+            pady=(1, 6)
+        )
+
+        # -------------------------------------------------
+        # WEATHER DETAILS
+        # -------------------------------------------------
+
+        details_frame = tk.Frame(
+            self.current_frame,
+            bg="white"
+        )
+
+        details_frame.pack(
+            fill="x",
+            padx=25,
+            pady=(0, 7)
+        )
+
+        self.humidity_label = self._create_detail(
+            details_frame,
+            "💧",
+            "Humidity",
+            "--"
+        )
+
+        self.wind_label = self._create_detail(
+            details_frame,
+            "💨",
+            "Wind",
+            "--"
+        )
+
+        self.pressure_label = self._create_detail(
+            details_frame,
+            "📊",
+            "Pressure",
+            "--"
+        )
+
+        self.visibility_label = self._create_detail(
+            details_frame,
+            "👁",
+            "Visibility",
+            "--"
+        )
+
+        # -------------------------------------------------
+        # UNIT SWITCH
+        # -------------------------------------------------
+
+        unit_frame = tk.Frame(
+            self.main_frame,
+            bg="#f4f7fb"
+        )
+
+        unit_frame.pack(
+            pady=(4, 3)
+        )
+
+        unit_label = tk.Label(
+            unit_frame,
+            text="Temperature:",
+            font=("Segoe UI", 9, "bold"),
+            bg="#f4f7fb",
+            fg="#374151"
+        )
+
+        unit_label.pack(
+            side="left",
+            padx=(0, 6)
+        )
+
+        self.celsius_button = tk.Button(
+            unit_frame,
+            text="°C",
+            font=("Segoe UI", 9, "bold"),
+            bg="#2563eb",
+            fg="white",
+            activebackground="#1d4ed8",
+            activeforeground="white",
+            relief="flat",
+            padx=17,
+            pady=5,
+            cursor="hand2",
+            command=self._show_celsius
+        )
+
+        self.celsius_button.pack(
+            side="left",
+            padx=2
+        )
+
+        self.fahrenheit_button = tk.Button(
+            unit_frame,
+            text="°F",
+            font=("Segoe UI", 9, "bold"),
+            bg="#e5e7eb",
+            fg="#111827",
+            activebackground="#d1d5db",
+            activeforeground="#111827",
+            relief="flat",
+            padx=17,
+            pady=5,
+            cursor="hand2",
+            command=self._show_fahrenheit
+        )
+
+        self.fahrenheit_button.pack(
+            side="left",
+            padx=2
+        )
+
+        self.unit_status_label = tk.Label(
+            self.main_frame,
+            text="Currently showing Celsius",
+            font=("Segoe UI", 8),
+            bg="#f4f7fb",
+            fg="#6b7280"
+        )
+
+        self.unit_status_label.pack(
+            pady=(0, 5)
+        )
+
+        # -------------------------------------------------
+        # HOURLY FORECAST
+        # -------------------------------------------------
+
+        hourly_title = tk.Label(
+            self.main_frame,
+            text="Upcoming Forecast",
+            font=("Segoe UI", 13, "bold"),
+            bg="#f4f7fb",
+            fg="#1f2937"
+        )
+
+        hourly_title.pack(
+            anchor="w",
+            pady=(2, 5)
+        )
+
+        self.hourly_frame = tk.Frame(
+            self.main_frame,
+            bg="#f4f7fb"
+        )
+
+        self.hourly_frame.pack(
+            fill="x",
+            pady=(0, 7)
+        )
+
+        # -------------------------------------------------
+        # DAILY FORECAST
+        # -------------------------------------------------
+
+        daily_title = tk.Label(
+            self.main_frame,
+            text="5-Day Forecast",
+            font=("Segoe UI", 13, "bold"),
+            bg="#f4f7fb",
+            fg="#1f2937"
+        )
+
+        daily_title.pack(
+            anchor="w",
+            pady=(2, 5)
+        )
+
+        self.daily_frame = tk.Frame(
+            self.main_frame,
+            bg="#f4f7fb"
+        )
+
+        self.daily_frame.pack(
+            fill="x"
+        )
+
+    # =====================================================
+    # DETAIL WIDGET
+    # =====================================================
+
+    def _create_detail(
+        self,
+        parent: tk.Widget,
+        icon: str,
+        title: str,
+        value: str
+    ) -> tk.Label:
+        """Create one weather information block."""
+
+        frame = tk.Frame(
+            parent,
+            bg="white"
+        )
+
+        frame.pack(
+            side="left",
+            expand=True,
+            padx=4
+        )
+
+        tk.Label(
+            frame,
+            text=icon,
+            font=("Segoe UI Emoji", 16),
+            bg="white"
+        ).pack()
+
+        tk.Label(
+            frame,
+            text=title,
+            font=("Segoe UI", 8),
+            bg="white",
+            fg="#6b7280"
+        ).pack()
+
+        value_label = tk.Label(
+            frame,
+            text=value,
+            font=("Segoe UI", 9, "bold"),
+            bg="white",
+            fg="#111827"
+        )
+
+        value_label.pack()
+
+        return value_label
+
+    # =====================================================
+    # SEARCH WEATHER
+    # =====================================================
+
+    def _search_weather(
+        self,
+        city: str | None = None
+    ) -> None:
+        """Start a weather search."""
+
+        if city is None:
+            city = self.search_entry.get().strip()
+
+        if not city:
+            self._show_error(
+                "Please enter a city name."
+            )
+            return
+
+        if self.is_loading:
+            return
+
+        self.is_loading = True
+
+        self.search_button.config(
+            state="disabled",
+            text="Searching..."
+        )
+
+        self.location_button.config(
+            state="disabled"
+        )
+
+        self.status_label.config(
+            text=f"Fetching weather for {city}..."
+        )
+
+        thread = threading.Thread(
+            target=self._fetch_weather,
+            args=(city,),
+            daemon=True
+        )
+
+        thread.start()
+
+    # =====================================================
+    # FETCH WEATHER
+    # =====================================================
+
+    def _fetch_weather(
+        self,
+        city: str
+    ) -> None:
+        """Fetch weather in a background thread."""
+
+        try:
+
+            weather_data = self.weather_api.get_weather(
+                city
+            )
+
+            self.root.after(
+                0,
+                self._weather_loaded,
+                weather_data
+            )
+
+        except WeatherAPIError as error:
+
+            self.root.after(
+                0,
+                self._weather_failed,
+                str(error)
+            )
+
+        except Exception as error:
+
+            self.root.after(
+                0,
+                self._weather_failed,
+                f"Unexpected error: {error}"
+            )
+
+    # =====================================================
+    # WEATHER LOADED
+    # =====================================================
+
+    def _weather_loaded(
+        self,
+        weather_data: dict[str, Any]
+    ) -> None:
+        """Handle successfully retrieved weather."""
+
+        self.is_loading = False
+
+        self.search_button.config(
+            state="normal",
+            text="Search"
+        )
+
+        self.location_button.config(
+            state="normal"
+        )
+
+        location = weather_data["location"]
+        current = weather_data["current"]
+        forecast = weather_data["forecast"]
+
+        self.current_weather = current
+
+        self._process_forecast(
+            forecast
+        )
+
+        self._update_current_weather()
+        self._update_hourly_forecast()
+        self._update_daily_forecast()
+
+        self.search_entry.delete(
+            0,
+            tk.END
+        )
+
+        self.search_entry.insert(
+            0,
+            location["name"]
+        )
+
+        self.status_label.config(
+            text=(
+                f"Weather updated for "
+                f"{location['name']}, "
+                f"{location['country']}"
+            )
+        )
+
+    # =====================================================
+    # WEATHER FAILED
+    # =====================================================
+
+    def _weather_failed(
+        self,
+        error_message: str
+    ) -> None:
+        """Handle API errors."""
+
+        self.is_loading = False
+
+        self.search_button.config(
+            state="normal",
+            text="Search"
+        )
+
+        self.location_button.config(
+            state="normal"
+        )
+
+        self.status_label.config(
+            text="Unable to load weather."
+        )
+
+        self._show_error(
+            error_message
+        )
+
+    # =====================================================
+    # PROCESS FORECAST
+    # =====================================================
+
+    def _process_forecast(
+        self,
+        forecast: dict[str, Any]
+    ) -> None:
+        """Process OpenWeather forecast data."""
+
+        forecast_entries = forecast.get(
+            "list",
+            []
+        )
+
+        # -------------------------------------------------
+        # UPCOMING FORECAST PERIODS
+        # -------------------------------------------------
+
+        self.hourly_forecast = []
+
+        for entry in forecast_entries[:6]:
+
+            timestamp = entry.get(
+                "dt_txt",
+                ""
+            )
+
+            time_text = self._format_forecast_time(
+                timestamp
+            )
+
+            weather = entry.get(
+                "weather",
+                [{}]
+            )[0]
+
+            icon = self._get_weather_emoji(
+                weather.get(
+                    "icon",
+                    ""
+                )
+            )
+
+            self.hourly_forecast.append(
+                {
+                    "time": time_text,
+                    "temperature": entry["main"]["temp"],
+                    "icon": icon
+                }
+            )
+
+        # -------------------------------------------------
+        # GROUP BY DAY
+        # -------------------------------------------------
+
+        grouped_days: dict[
+            str,
+            list[dict[str, Any]]
+        ] = {}
+
+        for entry in forecast_entries:
+
+            timestamp = entry.get(
+                "dt_txt",
+                ""
+            )
+
+            if not timestamp:
+                continue
+
+            date_part = timestamp.split(" ")[0]
+
+            if date_part not in grouped_days:
+                grouped_days[date_part] = []
+
+            grouped_days[date_part].append(
+                entry
+            )
+
+        self.daily_forecast = []
+
+        for date, entries in list(
+            grouped_days.items()
+        )[:5]:
+
+            temperatures = [
+                entry["main"]["temp"]
+                for entry in entries
+            ]
+
+            highest = max(
+                temperatures
+            )
+
+            lowest = min(
+                temperatures
+            )
+
+            middle_entry = entries[
+                len(entries) // 2
+            ]
+
+            weather = middle_entry.get(
+                "weather",
+                [{}]
+            )[0]
+
+            icon = self._get_weather_emoji(
+                weather.get(
+                    "icon",
+                    ""
+                )
+            )
+
+            self.daily_forecast.append(
+                {
+                    "date": self._format_day(
+                        date
+                    ),
+                    "temperature_min": lowest,
+                    "temperature_max": highest,
+                    "icon": icon
+                }
+            )
+
+    # =====================================================
+    # GET MY LOCATION
+    # =====================================================
+
+    def _use_location(self) -> None:
+        """Detect approximate location using public IP."""
+
+        if self.is_loading:
+            return
+
+        self.is_loading = True
+
+        self.search_button.config(
+            state="disabled"
+        )
+
+        self.location_button.config(
+            state="disabled",
+            text="Detecting..."
+        )
+
+        self.status_label.config(
+            text="Detecting your location..."
+        )
+
+        thread = threading.Thread(
+            target=self._detect_location,
+            daemon=True
+        )
+
+        thread.start()
+
+    # =====================================================
+    # DETECT LOCATION
+    # =====================================================
+
+    def _detect_location(self) -> None:
+        """Get approximate location from public IP."""
+
+        try:
+
+            response = requests.get(
+                "https://ipapi.co/json/",
+                timeout=10
+            )
+
+            if response.status_code != 200:
+                raise WeatherAPIError(
+                    "Unable to detect your location."
+                )
+
+            data = response.json()
+
+            city = data.get(
+                "city"
+            )
+
+            if not city:
+                raise WeatherAPIError(
+                    "Your city could not be determined "
+                    "from your IP address."
+                )
+
+            self.root.after(
+                0,
+                self._location_detected,
+                city
+            )
+
+        except requests.exceptions.Timeout:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                "Location detection timed out."
+            )
+
+        except requests.exceptions.ConnectionError:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                "Could not connect to the "
+                "location service."
+            )
+
+        except requests.exceptions.RequestException as error:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                f"Location service error: {error}"
+            )
+
+        except ValueError:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                "Location service returned invalid data."
+            )
+
+        except WeatherAPIError as error:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                str(error)
+            )
+
+        except Exception as error:
+
+            self.root.after(
+                0,
+                self._location_failed,
+                f"Unexpected error: {error}"
+            )
+
+    # =====================================================
+    # LOCATION DETECTED
+    # =====================================================
+
+    def _location_detected(
+        self,
+        city: str
+    ) -> None:
+        """Start weather search after location detection."""
+
+        # Reset loading state because _search_weather()
+        # needs to start a new request.
+        self.is_loading = False
+
+        self.search_button.config(
+            state="normal"
+        )
+
+        self.location_button.config(
+            state="normal",
+            text="📍 Use My Location"
+        )
+
+        self.search_entry.delete(
+            0,
+            tk.END
+        )
+
+        self.search_entry.insert(
+            0,
+            city
+        )
+
+        self.status_label.config(
+            text=f"Location detected: {city}"
+        )
+
+        # Now fetch actual weather.
+        self._search_weather(
+            city
+        )
+
+    # =====================================================
+    # LOCATION FAILED
+    # =====================================================
+
+    def _location_failed(
+        self,
+        error_message: str
+    ) -> None:
+        """Handle location detection errors."""
+
+        self.is_loading = False
+
+        self.search_button.config(
+            state="normal"
+        )
+
+        self.location_button.config(
+            state="normal",
+            text="📍 Use My Location"
+        )
+
+        self.status_label.config(
+            text="Location detection failed."
+        )
+
+        self._show_error(
+            error_message
+        )
+
+    # =====================================================
+    # FORMAT FORECAST TIME
+    # =====================================================
+
+    def _format_forecast_time(
+        self,
+        timestamp: str
+    ) -> str:
+        """Convert API timestamp into readable time."""
+
+        try:
+
+            time_part = timestamp.split(" ")[1]
+
+            hour = int(
+                time_part.split(":")[0]
+            )
+
+            if hour == 0:
+                return "12 AM"
+
+            if hour < 12:
+                return f"{hour} AM"
+
+            if hour == 12:
+                return "12 PM"
+
+            return f"{hour - 12} PM"
+
+        except (IndexError, ValueError):
+
+            return "--"
+
+    # =====================================================
+    # FORMAT DAY
+    # =====================================================
+
+    def _format_day(
+        self,
+        date_string: str
+    ) -> str:
+        """Convert date into a weekday name."""
+
+        try:
+
+            from datetime import datetime
+
+            date_object = datetime.strptime(
+                date_string,
+                "%Y-%m-%d"
+            )
+
+            return date_object.strftime(
+                "%a"
+            )
+
+        except ValueError:
+
+            return date_string
+
+    # =====================================================
+    # WEATHER EMOJI
+    # =====================================================
+
+    def _get_weather_emoji(
+        self,
+        icon_code: str
+    ) -> str:
+        """Convert OpenWeather icon code to emoji."""
+
+        emoji_map = {
+            "01d": "☀️",
+            "01n": "🌙",
+
+            "02d": "🌤️",
+            "02n": "☁️",
+
+            "03d": "☁️",
+            "03n": "☁️",
+
+            "04d": "☁️",
+            "04n": "☁️",
+
+            "09d": "🌧️",
+            "09n": "🌧️",
+
+            "10d": "🌦️",
+            "10n": "🌧️",
+
+            "11d": "⛈️",
+            "11n": "⛈️",
+
+            "13d": "❄️",
+            "13n": "❄️",
+
+            "50d": "🌫️",
+            "50n": "🌫️"
+        }
+
+        return emoji_map.get(
+            icon_code,
+            "🌤️"
+        )
+
+    # =====================================================
+    # CELSIUS
+    # =====================================================
+
+    def _show_celsius(self) -> None:
+        """Switch to Celsius."""
+
+        self.current_unit = "C"
+
+        self._refresh_all_temperatures()
+
+        self.celsius_button.config(
+            bg="#2563eb",
+            fg="white"
+        )
+
+        self.fahrenheit_button.config(
+            bg="#e5e7eb",
+            fg="#111827"
+        )
+
+        self.unit_status_label.config(
+            text="Currently showing Celsius"
+        )
+
+    # =====================================================
+    # FAHRENHEIT
+    # =====================================================
+
+    def _show_fahrenheit(self) -> None:
+        """Switch to Fahrenheit."""
+
+        self.current_unit = "F"
+
+        self._refresh_all_temperatures()
+
+        self.fahrenheit_button.config(
+            bg="#2563eb",
+            fg="white"
+        )
+
+        self.celsius_button.config(
+            bg="#e5e7eb",
+            fg="#111827"
+        )
+
+        self.unit_status_label.config(
+            text="Currently showing Fahrenheit"
+        )
+
+    # =====================================================
+    # REFRESH TEMPERATURES
+    # =====================================================
+
+    def _refresh_all_temperatures(self) -> None:
+        """Refresh all temperature displays."""
+
+        self._update_current_weather()
+        self._update_hourly_forecast()
+        self._update_daily_forecast()
+
+    # =====================================================
+    # FORMAT TEMPERATURE
+    # =====================================================
+
+    def _format_temperature(
+        self,
+        celsius: float
+    ) -> str:
+        """Convert Celsius into selected display unit."""
+
+        if self.current_unit == "F":
+
+            fahrenheit = (
+                celsius * 9 / 5
+            ) + 32
+
+            return f"{fahrenheit:.1f}°F"
+
+        return f"{celsius:.1f}°C"
+
+    # =====================================================
+    # UPDATE CURRENT WEATHER
+    # =====================================================
+
+    def _update_current_weather(self) -> None:
+        """Update current weather information."""
+
+        if not self.current_weather:
+            return
+
+        weather = self.current_weather
+
+        self.location_label.config(
+            text=(
+                f"{weather.get('city', 'Unknown')}, "
+                f"{weather.get('country', '')}"
+            )
+        )
+
+        self.temperature_label.config(
+            text=self._format_temperature(
+                weather["temperature"]
+            )
+        )
+
+        self.feels_like_label.config(
+            text=(
+                "Feels like "
+                + self._format_temperature(
+                    weather["feels_like"]
+                )
+            )
+        )
+
+        self.description_label.config(
+            text=weather["description"].title()
+        )
+
+        self.icon_label.config(
+            text=self._get_weather_emoji(
+                weather.get(
+                    "icon",
+                    ""
+                )
+            )
+        )
+
+        self.humidity_label.config(
+            text=f"{weather['humidity']}%"
+        )
+
+        self.wind_label.config(
+            text=f"{weather['wind_speed']} m/s"
+        )
+
+        self.pressure_label.config(
+            text=f"{weather['pressure']} hPa"
+        )
+
+        visibility_km = (
+            weather["visibility"] / 1000
+        )
+
+        self.visibility_label.config(
+            text=f"{visibility_km:.1f} km"
+        )
+
+    # =====================================================
+    # UPDATE UPCOMING FORECAST
+    # =====================================================
+
+    def _update_hourly_forecast(self) -> None:
+        """Update upcoming forecast cards."""
+
+        for widget in self.hourly_frame.winfo_children():
+            widget.destroy()
+
+        for entry in self.hourly_forecast:
+
+            card = tk.Frame(
+                self.hourly_frame,
+                bg="white",
+                padx=7,
+                pady=6
+            )
+
+            card.pack(
+                side="left",
+                expand=True,
+                fill="x",
+                padx=2
+            )
+
+            tk.Label(
+                card,
+                text=entry["time"],
+                font=("Segoe UI", 8, "bold"),
+                bg="white",
+                fg="#374151"
+            ).pack()
+
+            tk.Label(
+                card,
+                text=entry["icon"],
+                font=("Segoe UI Emoji", 17),
+                bg="white"
+            ).pack(
+                pady=1
+            )
+
+            tk.Label(
+                card,
+                text=self._format_temperature(
+                    entry["temperature"]
+                ),
+                font=("Segoe UI", 9, "bold"),
+                bg="white",
+                fg="#111827"
+            ).pack()
+
+    # =====================================================
+    # UPDATE DAILY FORECAST
+    # =====================================================
+
+    def _update_daily_forecast(self) -> None:
+        """Update five-day forecast cards."""
+
+        for widget in self.daily_frame.winfo_children():
+            widget.destroy()
+
+        for entry in self.daily_forecast:
+
+            card = tk.Frame(
+                self.daily_frame,
+                bg="white",
+                padx=7,
+                pady=6
+            )
+
+            card.pack(
+                side="left",
+                expand=True,
+                fill="x",
+                padx=2
+            )
+
+            tk.Label(
+                card,
+                text=entry["date"],
+                font=("Segoe UI", 8, "bold"),
+                bg="white",
+                fg="#374151"
+            ).pack()
+
+            tk.Label(
+                card,
+                text=entry["icon"],
+                font=("Segoe UI Emoji", 17),
+                bg="white"
+            ).pack(
+                pady=1
+            )
+
+            high_temperature = self._format_temperature(
+                entry["temperature_max"]
+            )
+
+            low_temperature = self._format_temperature(
+                entry["temperature_min"]
+            )
+
+            tk.Label(
+                card,
+                text=(
+                    f"{high_temperature} / "
+                    f"{low_temperature}"
+                ),
+                font=("Segoe UI", 8, "bold"),
+                bg="white",
+                fg="#111827"
+            ).pack()
+
+    # =====================================================
+    # ERROR DIALOG
+    # =====================================================
+
+    def _show_error(
+        self,
+        message: str
+    ) -> None:
+        """Display an error dialog."""
+
+        messagebox.showerror(
+            "Weather App",
+            message
+        )
